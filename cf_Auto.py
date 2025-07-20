@@ -33,7 +33,7 @@ F11_TEMPLATE_DIR = 'f11_templates'
 class CFAotuGUI(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("CF挂机助手 v1.0.5")
+        self.title("CF挂机助手")
         self.geometry("810x600")
         self.templates = {}
         self.f11_templates = {}
@@ -106,6 +106,9 @@ class CFAotuGUI(tk.Tk):
     def log_message(self, msg):
         if not self.log_enabled.get():
             return
+        self.after(0, self._update_log, msg)
+
+    def _update_log(self, msg):
         self.log.configure(state=tk.NORMAL)
         self.log.insert(tk.END, f"{time.strftime('%H:%M:%S')} - {msg}\n")
         self.log.configure(state=tk.DISABLED)
@@ -142,13 +145,18 @@ class CFAotuGUI(tk.Tk):
         if not path:
             return
         try:
-            tpl = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+            with open(path, 'rb') as f:
+                tpl_data = np.frombuffer(f.read(), np.uint8)
+            tpl = cv2.imdecode(tpl_data, cv2.IMREAD_GRAYSCALE)
+
             if tpl is None:
                 messagebox.showerror('错误', '无法读取图像')
                 return
             dst_path = os.path.join(TEMPLATE_DIR, os.path.basename(path))
             if not os.path.exists(dst_path):
-                cv2.imwrite(dst_path, tpl)
+                _, buf = cv2.imencode(f'.{path.split(".")[-1]}', tpl)
+                buf.tofile(dst_path)
+
             self._load_templates()
             self.log_message(f"添加模板: {os.path.basename(path)}")
         except Exception as e:
@@ -170,13 +178,18 @@ class CFAotuGUI(tk.Tk):
         if not path:
             return
         try:
-            tpl = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+            with open(path, 'rb') as f:
+                tpl_data = np.frombuffer(f.read(), np.uint8)
+            tpl = cv2.imdecode(tpl_data, cv2.IMREAD_GRAYSCALE)
+
             if tpl is None:
                 messagebox.showerror('错误', '无法读取图像')
                 return
             dst_path = os.path.join(F11_TEMPLATE_DIR, os.path.basename(path))
             if not os.path.exists(dst_path):
-                cv2.imwrite(dst_path, tpl)
+                _, buf = cv2.imencode(f'.{path.split(".")[-1]}', tpl)
+                buf.tofile(dst_path)
+
             self._load_f11_templates()
             self.log_message(f"添加F11模板: {os.path.basename(path)}")
         except Exception as e:
@@ -206,37 +219,39 @@ class CFAotuGUI(tk.Tk):
         else:
             self.log_message('未安装 pynput，热键不可用')
 
+                    # 已修改：优化点击操作的稳定性和可靠性
     def click_at(self, x, y):
-        try:
-            if win32api:
-                win32api.SetCursorPos((int(x), int(y)))
-                time.sleep(0.05)
-                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-                time.sleep(0.05)
-                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-            else:
-                pyautogui.moveTo(x, y)
-                pyautogui.click()
-        except Exception as e:
-            self.log_message(f"点击时发生错误: {e}")
 
-    # --- 新增函数：使用 win32api 模拟按键 ---
+        try:
+            int_x, int_y = int(x), int(y)
+            if win32api:
+                win32api.SetCursorPos((int_x, int_y))
+                time.sleep(0.03)  # Delay for cursor to settle
+                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                time.sleep(0.05)  # Delay between down and up events
+                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                time.sleep(0.03)  # Delay after click to ensure it's processed
+            else:
+                pyautogui.moveTo(int_x, int_y)
+                time.sleep(0.03)
+                pyautogui.mouseDown()
+                time.sleep(0.05)
+                pyautogui.mouseUp()
+                time.sleep(0.03)
+        except Exception as e:
+            self.log_message(f"点击 @({int_x},{int_y}) 时发生错误: {e}")
+
     def press_f11_direct(self):
-        """
-        使用低级别的 win32api 模拟按下F11键，以绕过游戏检测。
-        """
+        # 使用低级win32api按F11键绕过游戏检测。
         if win32api and VK_F11:
             try:
-                # 模拟 F11 键按下
                 win32api.keybd_event(VK_F11, 0, 0, 0)
-                time.sleep(0.05)  # 模拟按键按下的短暂延迟
-                # 模拟 F11 键抬起
+                time.sleep(0.05)
                 win32api.keybd_event(VK_F11, 0, win32con.KEYEVENTF_KEYUP, 0)
                 self.log_message("已通过 win32api 模拟按下 F11")
             except Exception as e:
                 self.log_message(f"win32api 模拟F11失败: {e}")
         else:
-            # 如果 win32api 不可用，则回退到 pyautogui
             pyautogui.press('f11')
             self.log_message("win32api 不可用，回退到 pyautogui 模拟按下 F11")
 
@@ -250,7 +265,7 @@ class CFAotuGUI(tk.Tk):
             self.idle_threshold = int(float(self.idle_threshold_minutes.get()) * 60)
         except ValueError:
             self.idle_threshold = 900
-            self.log_message("无效的空闲阈值，已重置为15分钟")
+            self.log_message("无效的空闲阈值，已重置为0.3分钟")
         self.running = True
         self.last_action_time = time.time()
         self.worker_thread = threading.Thread(target=self._loop, daemon=True)
@@ -265,52 +280,48 @@ class CFAotuGUI(tk.Tk):
             self.worker_thread.join(timeout=2)
         self.log_message('挂机停止')
 
-    def _loop(self):
+    def _loop(self):          #识别匹配点击
         while self.running:
             try:
                 screenshot = pyautogui.screenshot()
                 screen = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2GRAY)
                 found_in_cycle = False
-
-                # --- 模板匹配逻辑 ---
                 matched_targets = []
                 for path, tpl in self.templates.items():
                     res = cv2.matchTemplate(screen, tpl, cv2.TM_CCOEFF_NORMED)
                     _, max_val, _, max_loc = cv2.minMaxLoc(res)
                     if max_val >= 0.8:
                         th, tw = tpl.shape
-                        x = max_loc[0] + tw // 2
-                        y = max_loc[1] + th // 2
+                        x = max_loc[0] + tw / 2
+                        y = max_loc[1] + th / 2
                         matched_targets.append((path, x, y, max_val))
 
-                # 按文件名排序，确保点击顺序稳定
                 matched_targets.sort(key=lambda item: item[0])
 
                 for path, x, y, conf in matched_targets:
                     if not self.running: break
+                    self.log_message(f"点击 {os.path.basename(path)} @({int(x)},{int(y)}) conf={conf:.2f}")
                     self.click_at(x, y)
                     self.last_action_time = time.time()
-                    self.log_message(f"点击 {os.path.basename(path)} @({x},{y}) conf={conf:.2f}")
                     time.sleep(0.5)
                     found_in_cycle = True
 
-                # --- F11 检测逻辑 (已修改) ---
-                if self.f11_enabled.get():
+                # 检查是否启用 F11 检测
+                if self.f11_enabled.get() and not found_in_cycle:
                     for path, tpl in self.f11_templates.items():
                         if not self.running: break
                         res = cv2.matchTemplate(screen, tpl, cv2.TM_CCOEFF_NORMED)
                         _, max_val, _, _ = cv2.minMaxLoc(res)
                         if max_val >= 0.85:
                             self.log_message(f"检测到踢人模板: {os.path.basename(path)}，准备按下F11")
-                            self.press_f11_direct()  # <-- 调用新的底层函数
+                            self.press_f11_direct()
                             self.last_action_time = time.time()
                             found_in_cycle = True
-                            break  # 找到一个就按，然后跳出F11模板循环
-
+                            time.sleep(1)
+                            break
                 if not self.running: break
 
-                # --- 反挂机检测逻辑 ---
-                if not found_in_cycle and self.emergency_enabled.get():
+                if not found_in_cycle and self.emergency_enabled.get():  # 反挂机检测
                     if time.time() - self.last_action_time > self.idle_threshold:
                         pyautogui.mouseDown(button='left')
                         time.sleep(1)
@@ -323,7 +334,7 @@ class CFAotuGUI(tk.Tk):
 
             except Exception as e:
                 self.log_message(f"循环中发生错误: {e}")
-                time.sleep(5)  # 发生错误后等待一段时间
+                time.sleep(5)
 
 
 if __name__ == '__main__':

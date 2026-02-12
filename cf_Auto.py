@@ -1,26 +1,19 @@
 # -*- coding: utf-8 -*-
+from asyncio import subprocess
 import threading
+import win32api
+import win32con
 import time
 import os
 import sys
+import shutil
 import cv2
 import numpy as np
 import pyautogui
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-import json
 import ctypes
 
-# Windows 专用库
-try:
-    import win32api, win32con
-
-    # 添加F11的虚拟键码
-    VK_F11 = 0x7A
-except ImportError:
-    win32api = None
-    VK_F11 = None
-    print("警告: 未找到 win32api 库，部分功能可能受限。")
 
 # 全局热键库优先使用 pynput
 try:
@@ -130,8 +123,8 @@ class CFAotuGUI(tk.Tk):
         self.geometry("1500x1000")
         self.templates = {}
         self.running = False
-        self.start_hotkey = tk.StringVar(value="<f6>")
-        self.stop_hotkey = tk.StringVar(value="<f7>")
+        self.start_hotkey = tk.StringVar(value="<f11>")
+        self.stop_hotkey = tk.StringVar(value="<f12>")
         self.worker_thread = None
         self.hotkey_listener = None
         self.is_topmost = tk.BooleanVar(value=False)
@@ -147,7 +140,7 @@ class CFAotuGUI(tk.Tk):
         self.shutdown_timer = None
         self.shutdown_remaining = 0
 
-        os.makedirs(TEMPLATE_DIR, exist_ok=True)
+
 
         # 设置现代主题
         self._setup_theme()
@@ -389,8 +382,6 @@ class CFAotuGUI(tk.Tk):
             # 保存模板文件
             if not os.path.exists(dst_path):
                 # 使用更可靠的文件复制方式
-                import shutil
-
                 shutil.copy2(path, dst_path)
                 self.log_message(f"成功保存模板到: {dst_path}")
             else:
@@ -443,21 +434,13 @@ class CFAotuGUI(tk.Tk):
     def click_at(self, x, y):
         try:
             int_x, int_y = int(x), int(y)
-            if win32api:
-                # 使用win32api进行精确的鼠标点击，提高游戏内识别率
-                win32api.SetCursorPos((int_x, int_y))
-                time.sleep(0.03)  # Delay for cursor to settle
-                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-                time.sleep(0.05)  # Delay between down and up events
-                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-                time.sleep(0.03)  # Delay after click to ensure it's processed
-            else:
-                pyautogui.moveTo(int_x, int_y)
-                time.sleep(0.03)
-                pyautogui.mouseDown()
-                time.sleep(0.05)
-                pyautogui.mouseUp()
-                time.sleep(0.03)
+            # 使用win32api进行精确的鼠标点击，提高游戏内识别率
+            win32api.SetCursorPos((int_x, int_y))
+            time.sleep(0.03)  # Delay for cursor to settle
+            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+            time.sleep(0.05)  # Delay between down and up events
+            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+            time.sleep(0.03)  # Delay after click to ensure it's processed
         except Exception as e:
             self.log_message(f"点击 @({int_x},{int_y}) 时发生错误: {e}")
 
@@ -465,49 +448,37 @@ class CFAotuGUI(tk.Tk):
         """执行反挂机检测动作，模拟真实玩家行为"""
         try:
             if win32api:
+                # 检查是否有管理员权限
+                is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
+                if not is_admin:
+                    self.log_message("警告: 无管理员权限，反挂机动作可能无法在游戏内生效")
+
                 # 使用win32api模拟更复杂的玩家行为，提高游戏内识别率
                 self.log_message("执行高级反挂机动作")
 
-                # 获取当前光标位置
-                current_pos = win32api.GetCursorPos()
-
-                # 随机移动鼠标，模拟玩家活动
-                for _ in range(3):
-                    # 生成随机偏移量
-                    dx = np.random.randint(-50, 50)
-                    dy = np.random.randint(-50, 50)
-                    new_x = current_pos[0] + dx
-                    new_y = current_pos[1] + dy
-
-                    # 移动到新位置
-                    win32api.SetCursorPos((new_x, new_y))
-                    time.sleep(0.1)
-
-                    # 短按左键
-                    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-                    time.sleep(0.05)
-                    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-                    time.sleep(0.1)
-
-                # 恢复光标位置
-                win32api.SetCursorPos(current_pos)
+                # 只短按左键，随机次数，不移动鼠标
+                click_count = np.random.randint(1, 5)  # 随机点击次数 1-4次
+                for _ in range(click_count):
+                    # 短按左键，使用不同的参数组合，减少被检测的可能性
+                    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN | win32con.MOUSEEVENTF_ABSOLUTE, 0, 0, np.random.randint(1, 10), np.random.randint(1, 10))
+                    # 随机按下时长
+                    press_duration = np.random.uniform(0.05, 0.2)  # 随机按下时长 0.05-0.2秒
+                    time.sleep(press_duration)
+                    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP | win32con.MOUSEEVENTF_ABSOLUTE, 0, 0, np.random.randint(1, 10), np.random.randint(1, 10))
+                    # 随机间隔
+                    interval = np.random.uniform(0.1, 0.5)  # 随机间隔 0.1-0.5秒
+                    time.sleep(interval)
 
                 # 模拟按键操作
                 # 随机按WASD中的一个键
                 keys = [0x57, 0x41, 0x53, 0x44]  # W, A, S, D
                 random_key = np.random.choice(keys)
-                win32api.keybd_event(random_key, 0, 0, 0)
-                time.sleep(0.2)
-                win32api.keybd_event(random_key, 0, win32con.KEYEVENTF_KEYUP, 0)
-
-            else:
-                # 回退到pyautogui
-                self.log_message("执行基础反挂机动作")
-                pyautogui.moveRel(np.random.randint(-50, 50), np.random.randint(-50, 50), duration=0.1)
-                time.sleep(0.1)
-                pyautogui.click()
-                time.sleep(0.1)
-                pyautogui.moveRel(np.random.randint(-50, 50), np.random.randint(-50, 50), duration=0.1)
+                # 使用不同的参数组合，减少被检测的可能性
+                win32api.keybd_event(random_key, win32api.MapVirtualKey(random_key, 0), 0, 0)
+                # 随机按键时长
+                key_duration = np.random.uniform(0.1, 0.5)  # 随机按键时长 0.1-0.5秒
+                time.sleep(key_duration)
+                win32api.keybd_event(random_key, win32api.MapVirtualKey(random_key, 0), win32con.KEYEVENTF_KEYUP, 0)
 
         except Exception as e:
             self.log_message(f"反挂机动作执行失败: {e}")
@@ -591,8 +562,6 @@ class CFAotuGUI(tk.Tk):
             # 执行关机
             self.log_message("执行关机操作")
             try:
-                import subprocess
-
                 subprocess.run(["shutdown", "/s", "/t", "0"], check=True)
             except Exception as e:
                 self.log_message(f"关机失败: {e}")
@@ -640,7 +609,9 @@ class CFAotuGUI(tk.Tk):
                     if found:
                         continue
 
-                matched_targets.sort(key=lambda item: item[0])
+                # 实现列表循环点击，避免遮挡
+                # 按照y坐标排序，从上到下点击，避免下方模板被上方模板遮挡
+                matched_targets.sort(key=lambda item: item[2])  # 按y坐标排序
 
                 for path, x, y, conf in matched_targets:
                     if not self.running:
@@ -648,7 +619,9 @@ class CFAotuGUI(tk.Tk):
                     self.log_message(f"点击 {os.path.basename(path)} @({int(x)},{int(y)}) conf={conf:.2f}")
                     self.click_at(x, y)
                     self.last_action_time = time.time()
-                    time.sleep(0.5)
+                    # 随机间隔，避免机械点击
+                    click_interval = np.random.uniform(0.3, 0.8)  # 随机间隔 0.3-0.8秒
+                    time.sleep(click_interval)
                     found_in_cycle = True
 
                 if not self.running:
